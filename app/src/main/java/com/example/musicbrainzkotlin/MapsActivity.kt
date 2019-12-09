@@ -1,49 +1,137 @@
 package com.example.musicbrainzkotlin
 
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-
-import com.google.android.gms.maps.CameraUpdateFactory
+import android.widget.SearchView
+import androidx.appcompat.app.AppCompatActivity
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
 import java.net.URL
+import java.util.*
+import kotlin.collections.ArrayList
+import kotlin.collections.HashMap
+
 
 class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var mMap: GoogleMap
+    private lateinit var search: SearchView
+    private lateinit var timer: Timer
+    private lateinit var points: ArrayList<Point>
+    private var seconds = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_maps)
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+        search = findViewById(R.id.search)
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
-        printSomeData()
+        timer = Timer()
+        points = ArrayList()
+        searchSetup()
     }
 
-    private fun printSomeData() {
-        URL("http://musicbrainz.org/ws/2/place/?query=am").readText()
+    private fun searchSetup() {
+        search.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+
+            override fun onQueryTextChange(newText: String): Boolean {
+                if (newText.isBlank()) {
+                    mMap.clear()
+                }
+                return false
+            }
+
+            override fun onQueryTextSubmit(query: String): Boolean {
+                runCoroutineHTTP(query, 20, 0)
+                return false
+            }
+
+        })
     }
 
-    /**
-     * Manipulates the map once available.
-     * This callback is triggered when the map is ready to be used.
-     * This is where we can add markers or lines, add listeners or move the camera. In this case,
-     * we just add a marker near Sydney, Australia.
-     * If Google Play services is not installed on the device, the user will be prompted to install
-     * it inside the SupportMapFragment. This method will only be triggered once the user has
-     * installed Google Play services and returned to the app.
-     */
+
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
-
-        // Add a marker in Sydney and move the camera
-        val sydney = LatLng(-34.0, 151.0)
-        mMap.addMarker(MarkerOptions().position(sydney).title("Marker in Sydney"))
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney))
     }
+
+    private fun runCoroutineHTTP(query: String, limit: Int, offset: Int) {
+        GlobalScope.launch {
+            val resultJSON = httpGet(query, limit, offset)
+            val places: JSONArray = resultJSON.getJSONArray("places")
+            var coordinateList = HashMap<Int, LatLng>()
+
+            for (i in 0 until places.length()) {
+                val place: JSONObject = places.getJSONObject(i)
+                if (place.has("coordinates") && place.has("life-span") ) {
+                    if(place.getJSONObject("life-span").has("begin")){
+                        val beginDate = place.getJSONObject("life-span").getString("begin").substring(0,3).toInt()
+                        if(beginDate>=1990){
+                            val lat = place.getJSONObject("coordinates").getString("latitude").toDouble()
+                            val lng = place.getJSONObject("coordinates").getString("longitude").toDouble()
+                            val lifeSpan = beginDate - 1990
+                            coordinateList[lifeSpan] = LatLng(lat, lng)
+                        }
+                    }
+                }
+            }
+            addMarkers(coordinateList)
+
+            if ((offset + limit) < resultJSON.getInt("count")) {
+                runCoroutineHTTP(query, limit, offset + limit)
+            } else {
+                timer.schedule(object : TimerTask() {
+                    override fun run() {
+                        //refreshMarkers(seconds)
+                        seconds+=1
+                    }
+                }, 1, 1000)
+
+            }
+        }
+    }
+
+    private fun refreshMarkers(secondssElapsed: Int) {
+        for(point in points){
+            if((point.lifespan-secondssElapsed)==0){
+                point.marker.remove()
+                points.remove(point)
+            }
+        }
+    }
+
+    private fun addMarkers(coordinateMap:  HashMap<Int, LatLng>) {
+        this@MapsActivity.runOnUiThread(Runnable {
+            for ((lifespan, position) in coordinateMap) {
+                 mMap.addMarker(MarkerOptions().position(position))
+                //points.add(Point(marker, lifespan))
+            }
+        })
+    }
+
+    private suspend fun httpGet(query: String, limit: Int, offset: Int): JSONObject {
+        val response = withContext(Dispatchers.IO) {
+            val result = try {
+                URL("http://musicbrainz.org/ws/2/place/?query=$query&limit=$limit&offset=$offset&fmt=json")
+                    .openStream()
+                    .bufferedReader()
+                    .use { it.readText() }
+            } catch (e: IOException) {
+                "Error with ${e.message}."
+            }
+            JSONObject(result)
+        }
+        return response
+    }
+
+
 }
