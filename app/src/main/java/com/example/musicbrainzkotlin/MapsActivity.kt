@@ -2,6 +2,9 @@ package com.example.musicbrainzkotlin
 
 import android.os.Bundle
 import android.text.InputType
+import android.util.Log
+import android.view.Menu
+import android.view.MenuInflater
 import android.view.MenuItem
 import android.widget.EditText
 import android.widget.SearchView
@@ -54,6 +57,12 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         searchSetup()
     }
 
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        val menuInflater = menuInflater
+        menuInflater.inflate(R.menu.menu_main, menu)
+        return super.onCreateOptionsMenu(menu)
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         openModal()
         return super.onOptionsItemSelected(item)
@@ -69,9 +78,9 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             .setView(editText)
 
         alert.setPositiveButton("Ok") { _, _ ->
-            val newLimit = editText.text.toString().toInt()
-            if (!editText.text.toString().isBlank() && newLimit >= 1 && newLimit <= 100) {
-                limit = newLimit
+
+            if (!editText.text.toString().isBlank() && editText.text.toString().toInt() >= 1 && editText.text.toString().toInt() <= 100) {
+                limit = editText.text.toString().toInt()
             } else {
                 Toast.makeText(applicationContext, "Limit should be number between 1 and 100",Toast.LENGTH_LONG).show()
             }
@@ -161,8 +170,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun showRequestsNumber() {
         this@MapsActivity.runOnUiThread {
             Toast.makeText(applicationContext, "Requests: $requests",Toast.LENGTH_LONG).show()
-            reset()
-            requests = 0
         }
     }
 
