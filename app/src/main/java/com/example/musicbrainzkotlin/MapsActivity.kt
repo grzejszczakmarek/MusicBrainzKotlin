@@ -1,6 +1,7 @@
 package com.example.musicbrainzkotlin
 
 import android.os.Bundle
+import android.util.Log
 import android.widget.SearchView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.gms.maps.GoogleMap
@@ -47,6 +48,10 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             override fun onQueryTextChange(newText: String): Boolean {
                 if (newText.isBlank()) {
                     mMap.clear()
+                    timer.cancel()
+                    seconds = 0
+                    points = ArrayList()
+
                 }
                 return false
             }
@@ -58,7 +63,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
         })
     }
-
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
@@ -72,12 +76,17 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
             for (i in 0 until places.length()) {
                 val place: JSONObject = places.getJSONObject(i)
-                if (place.has("coordinates") && place.has("life-span") ) {
-                    if(place.getJSONObject("life-span").has("begin")){
-                        val beginDate = place.getJSONObject("life-span").getString("begin").substring(0,3).toInt()
-                        if(beginDate>=1990){
-                            val lat = place.getJSONObject("coordinates").getString("latitude").toDouble()
-                            val lng = place.getJSONObject("coordinates").getString("longitude").toDouble()
+                if (place.has("coordinates") && place.has("life-span")) {
+                    if (place.getJSONObject("life-span").has("begin")) {
+                        val beginDate =
+                            place.getJSONObject("life-span").getString("begin").substring(0, 4)
+                                .toInt()
+                        Log.e("---", beginDate.toString())
+                        if (beginDate >= 1990) {
+                            val lat =
+                                place.getJSONObject("coordinates").getString("latitude").toDouble()
+                            val lng =
+                                place.getJSONObject("coordinates").getString("longitude").toDouble()
                             val lifeSpan = beginDate - 1990
                             coordinateList[lifeSpan] = LatLng(lat, lng)
                         }
@@ -89,31 +98,37 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             if ((offset + limit) < resultJSON.getInt("count")) {
                 runCoroutineHTTP(query, limit, offset + limit)
             } else {
-                timer.schedule(object : TimerTask() {
-                    override fun run() {
-                        //refreshMarkers(seconds)
-                        seconds+=1
-                    }
-                }, 1, 1000)
+                activateTimer()
 
             }
         }
+    }
+
+    private fun activateTimer() {
+        timer.schedule(object : TimerTask() {
+            override fun run() {
+                this@MapsActivity.runOnUiThread(Runnable {
+                    refreshMarkers(seconds)
+                    seconds += 1
+                })
+            }
+        }, 1, 1000)
     }
 
     private fun refreshMarkers(secondssElapsed: Int) {
-        for(point in points){
-            if((point.lifespan-secondssElapsed)==0){
+        for (point in points) {
+            if ((point.lifespan - secondssElapsed) == 0) {
                 point.marker.remove()
-                points.remove(point)
+                //points.remove(point)
             }
         }
     }
 
-    private fun addMarkers(coordinateMap:  HashMap<Int, LatLng>) {
+    private fun addMarkers(coordinateMap: HashMap<Int, LatLng>) {
         this@MapsActivity.runOnUiThread(Runnable {
             for ((lifespan, position) in coordinateMap) {
-                 mMap.addMarker(MarkerOptions().position(position))
-                //points.add(Point(marker, lifespan))
+                val marker = mMap.addMarker(MarkerOptions().position(position))
+                points.add(Point(marker, lifespan))
             }
         })
     }
