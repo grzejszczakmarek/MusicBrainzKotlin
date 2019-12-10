@@ -3,6 +3,7 @@ package com.example.musicbrainzkotlin
 import android.os.Bundle
 import android.util.Log
 import android.widget.SearchView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
@@ -29,6 +30,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     private lateinit var timer: Timer
     private lateinit var points: ArrayList<Point>
     private var seconds = 0
+    private var requests = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,10 +100,19 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             if ((offset + limit) < resultJSON.getInt("count")) {
                 runCoroutineHTTP(query, limit, offset + limit)
             } else {
+                showRequestsNumber()
                 activateTimer()
-
             }
         }
+    }
+
+    private fun showRequestsNumber() {
+        this@MapsActivity.runOnUiThread(Runnable {
+            val toast =
+                Toast.makeText(applicationContext, "Requests: $requests", Toast.LENGTH_SHORT)
+            toast.show()
+            requests = 0
+        })
     }
 
     private fun activateTimer() {
@@ -119,7 +130,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         for (point in points) {
             if ((point.lifespan - secondssElapsed) == 0) {
                 point.marker.remove()
-                //points.remove(point)
             }
         }
     }
@@ -134,6 +144,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private suspend fun httpGet(query: String, limit: Int, offset: Int): JSONObject {
+        requests += 1
         val response = withContext(Dispatchers.IO) {
             val result = try {
                 URL("http://musicbrainz.org/ws/2/place/?query=$query&limit=$limit&offset=$offset&fmt=json")
@@ -147,6 +158,4 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         }
         return response
     }
-
-
 }
