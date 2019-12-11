@@ -6,7 +6,9 @@ import android.util.Log
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
+import android.view.View
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.SearchView
 import android.widget.SearchView.*
 import android.widget.Toast
@@ -18,10 +20,7 @@ import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -35,6 +34,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var mMap: GoogleMap
     private lateinit var search: SearchView
+    private lateinit var spinner: ProgressBar
     private lateinit var timer: Timer
     private lateinit var points: ArrayList<Point>
     private var seconds = 0
@@ -51,10 +51,18 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         setSupportActionBar(toolbar)
         val mapFragment = supportFragmentManager
             .findFragmentById(R.id.map) as SupportMapFragment
+
         mapFragment.getMapAsync(this)
         timer = Timer()
         points = ArrayList()
         searchSetup()
+    }
+
+    private fun updateUI(visibility: Int){
+        this@MapsActivity.runOnUiThread {
+            spinner =findViewById(R.id.progressbar)
+            spinner.visibility = visibility
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -92,6 +100,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         search.setOnQueryTextListener(object : OnQueryTextListener {
             override fun onQueryTextChange(newText: String): Boolean {
                 if (newText.isBlank()) {
+                    updateUI(View.INVISIBLE)
                     reset()
                 }
                 return false
@@ -108,6 +117,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         mMap.clear()
         if(timerStarted) {
             timer.cancel()
+            timer.purge()
             timerStarted = false
         }
         seconds = 0
@@ -119,11 +129,15 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     }
 
     private fun runCoroutineHTTP(query: String, limit: Int, offset: Int) {
+        updateUI(View.VISIBLE)
         GlobalScope.launch {
-            val resultJSON = httpGet(query, limit, offset)
+            var resultJSON = httpGet(query, limit, offset)
 
             if (!resultJSON.has("places")) {
-                showError()
+                Log.e("---","ERROR encountered")
+                Thread.sleep(1000)
+                runCoroutineHTTP(query,limit,offset)
+                Log.e("---",resultJSON.toString())
                 return@launch
             }
 
@@ -153,6 +167,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             if ((offset + limit) < resultJSON.getInt("count")) {
                 runCoroutineHTTP(query, limit, offset + limit)
             } else {
+                updateUI(View.VISIBLE)
                 showRequestsNumber()
                 activateTimer()
             }
@@ -169,12 +184,15 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private fun showRequestsNumber() {
         this@MapsActivity.runOnUiThread {
+            spinner.visibility = View.INVISIBLE
             Toast.makeText(applicationContext, "Requests: $requests",Toast.LENGTH_LONG).show()
+            requests = 0
         }
     }
 
     private fun activateTimer() {
         timerLifespan = points.size
+        timer = Timer()
         timer.schedule(object : TimerTask() {
             override fun run() {
                 this@MapsActivity.runOnUiThread {
@@ -217,7 +235,8 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
                     .bufferedReader()
                     .use { it.readText() }
             } catch (e: IOException) {
-                "Error with ${e.message}."
+                Log.e("JSON",e.toString())
+                "{error:rateLimit}"
             }
             JSONObject(result)
         }
